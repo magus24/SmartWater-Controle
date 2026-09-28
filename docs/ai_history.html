@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Database & History - Smart Water</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #050b14;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --good: #10b981;
+            --warn: #f59e0b;
+            --bad: #ef4444;
+            --accent: #3b82f6;
+            --glass-bg: rgba(13, 20, 36, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --panel-bg: rgba(20, 27, 45, 0.85);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #050b14, #0f172a);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .brand {
+            font-size: 24px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+        }
+
+        .btn-back {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-back:hover { background: rgba(255,255,255,0.1); }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .metric-label { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+        .metric-value { font-size: 24px; font-weight: 800; color: #fff; }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            flex: 1;
+        }
+
+        .section-title { font-size: 16px; font-weight: 700; color: #e2e8f0; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px; }
+
+        /* Tables */
+        .table-container { overflow-x: auto; max-height: 400px; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; padding: 12px 16px; background: rgba(0,0,0,0.2); position: sticky; top: 0;}
+        td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
+        tr { transition: background 0.2s; }
+        tr:hover { background: rgba(255,255,255,0.05); }
+
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+        .badge.normal { background: rgba(16, 185, 129, 0.1); color: var(--good); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge.anomaly { background: rgba(239, 68, 68, 0.1); color: var(--bad); border: 1px solid rgba(239, 68, 68, 0.3); }
+        
+        .row-anomaly td { background: rgba(239, 68, 68, 0.05); }
+        .row-anomaly:hover td { background: rgba(239, 68, 68, 0.1); }
+
+        .anomaly-log {
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .log-item {
+            padding: 16px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            background: rgba(239, 68, 68, 0.05);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 4px solid var(--bad);
+        }
+
+        .detail-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;}
+        .detail-label { color: var(--muted); }
+        .detail-val { font-weight: 600; color: #fff; }
+        
+        .ai-verdict {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 250px !important;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn {
+            background: var(--accent); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;
+        }
+        .refresh-btn:hover { background: #2563eb; }
+
+    </style>
+    <script src="static/app-shim.js"></script>
+</head>
+<body>
+
+    <div class="header">
+        <div class="brand">💧 Smart Water AI - Database & History (MVP)</div>
+        <a href="index.html" class="btn-back">← Back to Map</a>
+    </div>
+
+    <!-- Summary Statistics -->
+    <div class="summary-grid">
+        <div class="glass-panel"><div class="metric-label">Total Pipes</div><div class="metric-value" id="tot-pipes">-</div></div>
+        <div class="glass-panel"><div class="metric-label">Total Sensors</div><div class="metric-value" id="tot-sensors">-</div></div>
+        <div class="glass-panel" style="border-bottom: 2px solid var(--accent);"><div class="metric-label">Historical Records</div><div class="metric-value" id="tot-records">-</div></div>
+        <div class="glass-panel" style="border-bottom: 2px solid var(--bad);"><div class="metric-label">Detected Anomalies</div><div class="metric-value" id="tot-anomalies">-</div></div>
+        <div class="glass-panel"><div class="metric-label">Model Status</div><div class="metric-value" id="model-status" style="color: var(--good);">-</div></div>
+        <div class="glass-panel"><div class="metric-label">Last Update</div><div class="metric-value" id="last-update" style="font-size: 16px; margin-top:8px;">-</div></div>
+    </div>
+
+    <div class="main-content">
+        <!-- Tables column -->
+        <div>
+            <div class="glass-panel" style="margin-bottom: 24px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                    <div class="section-title" style="margin:0; border:none;">Telemetry / Pressure History (Last 50)</div>
+                    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+                </div>
+                <div class="table-container">
+                    <table id="history-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Pipe ID</th>
+                                <th>Expected (Bar)</th>
+                                <th>Actual (Bar)</th>
+                                <th>Deviation</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Filled internally -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="glass-panel">
+                <div class="section-title">AI Incident Log</div>
+                <div class="anomaly-log" id="incident-log">
+                    <!-- Filled internally -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail column -->
+        <div>
+            <div class="glass-panel" id="detail-panel" style="height: 100%;">
+                <div class="section-title">Pipe Analysis Details</div>
+                <div id="detail-empty" style="color:var(--muted); text-align:center; padding: 40px 0;">
+                    Select a row from the history table to view AI analysis.
+                </div>
+                <div id="detail-content" style="display:none;">
+                    <div class="detail-row"><span class="detail-label">Pipe ID:</span><span class="detail-val" id="det-pipe">-</span></div>
+                    <div class="detail-row"><span class="detail-label">Location:</span><span class="detail-val" id="det-loc">-</span></div>
+                    
+                    <canvas id="pressureChart"></canvas>
+
+                    <div class="detail-row"><span class="detail-label">Baseline Norm:</span><span class="detail-val" id="det-base">-</span></div>
+                    <div class="detail-row"><span class="detail-label">Current / Last:</span><span class="detail-val" id="det-curr">-</span></div>
+                    
+                    <div class="ai-verdict">
+                        <div style="font-size:12px; color:var(--muted); text-transform:uppercase; margin-bottom:8px; font-weight:700;">AI Verdict</div>
+                        <div id="det-verdict" style="font-size:18px; font-weight:800; margin-bottom:12px;">-</div>
+                        <ul id="det-reasons" style="color:#cbd5e1; font-size:13px; padding-left: 16px; line-height:1.6;">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let myChart = null;
+
+        async function loadData() {
+            try {
+                // Load Stats
+                const stats = await (await fetch('/api/dashboard-stats')).json();
+                document.getElementById('tot-pipes').innerText = stats.total_pipes;
+                document.getElementById('tot-sensors').innerText = stats.total_sensors;
+                document.getElementById('tot-records').innerText = stats.historical_records.toLocaleString() + '+';
+                document.getElementById('tot-anomalies').innerText = stats.anomalies;
+                document.getElementById('model-status').innerText = stats.model_status;
+                document.getElementById('last-update').innerText = stats.last_update;
+
+                // Load History
+                const history = await (await fetch('/api/pressure-history')).json();
+                const tbody = document.querySelector('#history-table tbody');
+                tbody.innerHTML = '';
+                history.forEach(r => {
+                    const row = document.createElement('tr');
+                    if (r.status === 'anomaly') row.className = 'row-anomaly';
+                    const time = new Date(r.timestamp).toLocaleTimeString();
+                    
+                    let dev = r.deviation_percent;
+                    let devColor = dev < -10 ? 'var(--bad)' : (dev > 10 ? 'var(--bad)' : 'var(--muted)');
+
+                    row.innerHTML = `
+                        <td>${time}</td>
+                        <td>${r.pipe_id}</td>
+                        <td>${r.expected_pressure}</td>
+                        <td style="font-weight:700;">${r.actual_pressure}</td>
+                        <td style="color:${devColor};">${dev}%</td>
+                        <td><span class="badge ${r.status}">${r.status.toUpperCase()}</span></td>
+                    `;
+                    row.onclick = () => loadDetail(r.pipe_id);
+                    tbody.appendChild(row);
+                });
+
+                // Load Anomalies
+                const anomalies = await (await fetch('/api/anomalies')).json();
+                const logDiv = document.getElementById('incident-log');
+                logDiv.innerHTML = anomalies.length === 0 ? '<div style="color:var(--muted)">No incidents detected.</div>' : '';
+                
+                anomalies.forEach(a => {
+                    const time = new Date(a.detected_at).toLocaleString();
+                    const b = document.createElement('div');
+                    b.className = 'log-item';
+                    b.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-weight:700; color:#fff;">🚨 ${a.pipe_name} (${a.pipe_id})</span>
+                            <span style="font-size:12px; color:var(--muted);">${time}</span>
+                        </div>
+                        <div style="font-size:13px; color:#cbd5e1; margin-bottom:8px;">
+                            ${a.summary}
+                        </div>
+                        <div style="display:flex; gap:12px; font-size:12px;">
+                            <span style="background:rgba(239,68,68,0.2); color:#fca5a5; padding:2px 6px; border-radius:4px;">Severity: ${a.severity.toUpperCase()}</span>
+                            <span style="background:rgba(59,130,246,0.2); color:#93c5fd; padding:2px 6px; border-radius:4px;">Confidence: ${a.confidence}%</span>
+                        </div>
+                    `;
+                    logDiv.appendChild(b);
+                });
+
+            } catch (err) {
+                console.error("Error loading data", err);
+            }
+        }
+
+        async function loadDetail(pipeId) {
+            document.getElementById('detail-empty').style.display = 'none';
+            document.getElementById('detail-content').style.display = 'block';
+
+            try {
+                const res = await (await fetch('/api/pressure-history/' + pipeId)).json();
+                const pipe = res.pipe;
+                const hist = res.history;
+
+                document.getElementById('det-pipe').innerText = pipeId;
+                document.getElementById('det-loc').innerText = pipe.name + ' (' + pipe.road_hint + ')';
+                document.getElementById('det-base').innerText = pipe.baseline + ' Bar';
+                
+                if (hist.length > 0) {
+                    const last = hist[hist.length - 1];
+                    document.getElementById('det-curr').innerText = last.actual_pressure + ' Bar';
+                    
+                    const isAnomaly = last.status === 'anomaly';
+                    const devText = Math.abs(last.deviation_percent) + '% ' + (last.deviation_percent < 0 ? 'drop' : 'increase');
+                    
+                    const verdict = document.getElementById('det-verdict');
+                    const reasons = document.getElementById('det-reasons');
+                    
+                    if (isAnomaly) {
+                        verdict.innerText = '🔴 ANOMALY DETECTED';
+                        verdict.style.color = 'var(--bad)';
+                        reasons.innerHTML = `
+                            <li>Current pressure is ${devText} compared to historical baseline.</li>
+                            <li>Deviation heavily exceeds normal operational thresholds (±5%).</li>
+                            <li>Pattern matches severe localized leak signature.</li>
+                        `;
+                    } else {
+                        verdict.innerText = '🟢 NORMAL SYSTEM OPERATION';
+                        verdict.style.color = 'var(--good)';
+                        reasons.innerHTML = `
+                            <li>Pressure is stable within the expected boundary of ${pipe.baseline} Bar.</li>
+                            <li>No sudden drops or irregular fluctuations detected.</li>
+                        `;
+                    }
+
+                    renderChart(hist, pipe.baseline);
+                }
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderChart(history, baseline) {
+            const ctx = document.getElementById('pressureChart').getContext('2d');
+            if (myChart) myChart.destroy();
+
+            const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString());
+            const data = history.map(h => h.actual_pressure);
+            const baselineData = history.map(() => baseline);
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Actual Pressure',
+                            data: data,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Expected Baseline',
+                            data: baselineData,
+                            borderColor: '#10b981',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1' } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { 
+                            ticks: { color: '#94a3b8' }, 
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            min: Math.min(...data, baseline) - 1.0,
+                            max: Math.max(...data, baseline) + 1.0
+                        }
+                    }
+                }
+            });
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', loadData);
+        // Refresh every 5 seconds to get new simulated leaks if page left open
+        setInterval(loadData, 5000);
+
+    </script>
+</body>
+</html>
