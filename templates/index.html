@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SMART WATER AI PRO</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --bg:     #050b14;
+            --text:   #f8fafc;
+            --muted:  #94a3b8;
+            --good:   #10b981;
+            --warn:   #f59e0b;
+            --bad:    #ef4444;
+            --accent: #3b82f6;
+            --glass-bg:  rgba(10, 15, 28, 0.85); /* Plotroq fon (Yaxshiroq o'qilishi uchun) */
+            --glass-border: rgba(255, 255, 255, 0.12);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* ── Karta (Map) - Orqa fon ─────────────────────────────────────── */
+        #map-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            background: #0f172a;
+        }
+
+        #map-scanner {
+            position: absolute; top: 0; left: 0; width: 100%; height: 6px;
+            background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.6), transparent);
+            z-index: 1000; pointer-events: none; display: none;
+            animation: scanMove 4s linear infinite;
+        }
+
+        @keyframes scanMove {
+            0% { top: -5%; }
+            100% { top: 105%; }
+        }
+
+        #map { 
+            width: 100%; 
+            height: 100%; 
+            background: transparent; 
+            transition: filter 1.5s ease; 
+        }
+        .dimmed { /* Xiralashish o'chirildi (Foydalanuvchi talabi bilan) */ }
+
+        /* ── Glass Panellar (Umumiy UI komponentlari) ────────────────────── */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            pointer-events: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Yozuvlarni saqlash uchun turli zonalar (Absolute Positioning) */
+        .ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100;
+            pointer-events: none; /* Faqat ichidagi vidjetlar bosilishi u-n */
+        }
+
+        .top-left { position: absolute; top: 24px; left: 24px; width: 420px; display: flex; flex-direction: column; gap: 16px; }
+        .top-right { position: absolute; top: 24px; right: 24px; width: 440px; display: flex; flex-direction: column; gap: 16px; }
+        .bottom-center { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); width: 800px; display: flex; flex-direction: column; gap: 16px; }
+        
+        /* ── Chap Yuqori Markaz (Top Left) ───────────────────────────────── */
+        .brand { font-size: 28px; font-weight: 800; display: flex; align-items: center; gap: 12px; color: #fff; line-height: 1.2; text-shadow: 0 4px 10px rgba(0,0,0,0.5);}
+        .subtitle { font-size: 15px; font-weight: 400; color: #cbd5e1; line-height: 1.6; margin-top: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.8);}
+
+        /* ── O'ng Yuqori Markaz (Top Right) ──────────────────────────────── */
+        .top-status {
+            display: flex; align-items: center; gap: 16px;
+            font-size: 18px; font-weight: 700;
+        }
+        .pulse-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+        .status-stable .pulse-dot { background: var(--good); animation: dotPulse 2s infinite; box-shadow: 0 0 10px var(--good); }
+        .status-alert .pulse-dot { background: var(--bad); animation: dotPulseAlert 1.5s infinite; box-shadow: 0 0 10px var(--bad); }
+
+        @keyframes dotPulse { 0% { transform: scale(0.9); } 50% { transform: scale(1.1); box-shadow: 0 0 20px var(--good); } 100% { transform: scale(0.9); } }
+        @keyframes dotPulseAlert { 0% { transform: scale(0.9); } 50% { transform: scale(1.3); box-shadow: 0 0 30px var(--bad); } 100% { transform: scale(0.9); } }
+
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .metric-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .metric-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+        .metric-value { font-size: 24px; font-weight: 800; color: #fff; }
+
+        /* ── Pastki Markaz (Bottom Center) - Timeline & Controls ─────────── */
+        .controls-layout {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+        
+        /* Timeline */
+        .timeline-container { flex: 1; position: relative;}
+        .timeline {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+        .timeline::before {
+            content: ''; position: absolute; top: 18px; left: 40px; right: 40px; height: 3px;
+            background: rgba(255,255,255,0.1); z-index: 0;
+        }
+        .timeline-step {
+            z-index: 1; text-align: center; color: var(--muted);
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            transition: all 0.4s ease;
+            width: 140px;
+        }
+        .timeline-dot {
+            width: 36px; height: 36px; border-radius: 50%; background: #0f172a;
+            border: 2px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px; transition: 0.4s; color: var(--muted);
+        }
+        .timeline-label { font-size: 13px; font-weight: 500; line-height: 1.4; }
+        
+        .timeline-step.active .timeline-dot {
+            border-color: var(--accent); background: var(--accent); color: #fff;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+            transform: scale(1.1);
+        }
+        .timeline-step.active .timeline-label { color: #fff; font-weight: 600; }
+
+        /* Buttons */
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 240px;
+        }
+
+        button, select {
+            width: 100%; border: 1px solid var(--glass-border); 
+            background: rgba(255,255,255,0.05); color: #fff;
+            backdrop-filter: blur(10px);
+            border-radius: 10px; padding: 14px 16px; font-size: 15px; outline: none;
+            font-weight: 600; cursor: pointer; transition: all 0.2s;
+            font-family: inherit;
+        }
+        button:hover, select:hover { background: rgba(255,255,255,0.1); }
+        select option { background: var(--bg); color: #fff; }
+        
+        .primary {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            border-color: transparent;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }
+        .primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.6); }
+        .primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+        #resetBtn { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+        #resetBtn:hover { background: rgba(239, 68, 68, 0.1); }
+        #resetBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── AI Avariya Paneli (Eng katta muhim blok) ────────────────────── */
+        .incident-panel {
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            background: rgba(15, 23, 42, 0.85); /* Qizil fonni yeb qolmaslik uchun asosiy rang foni */
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 40px rgba(239, 68, 68, 0.1);
+            position: relative; overflow: hidden;
+            animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            display: none;
+            margin-top: 20px; /* Boshqa elementlardan uzoqlashtirish uchun */
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(40px) scale(0.95); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        
+        .incident-panel::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 6px; height: 100%;
+            background: var(--bad);
+        }
+
+        .incident-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;}
+        .badge { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 800; letter-spacing: 1px; }
+        .badge.critical { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.5); }
+        
+        .incident-title { font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #fff;}
+        .incident-desc { font-size: 15px; color: #cbd5e1; line-height: 1.6; margin-bottom: 24px;}
+
+        /* AI Comparision / Solishtiruv bloki */
+        .comparison-box {
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px; padding: 20px; margin-bottom: 24px;
+        }
+        .comp-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .comp-label { font-size: 14px; color: var(--muted); }
+        .comp-val-good { color: var(--good); font-size: 16px; font-weight: 700; }
+        .comp-val-bad { color: var(--bad); font-size: 16px; font-weight: 700; }
+        
+        .progress-bg { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin: 12px 0 6px 0;}
+        .progress-fill { height: 100%; background: var(--bad); border-radius: 4px; transition: width 1s ease-in-out; }
+
+        .ai-reasoning { margin-top: 10px; }
+        .ai-reasoning li { font-size: 15px; color: #cbd5e1; margin-bottom: 8px; line-height: 1.5; padding-left: 20px; position: relative;}
+        .ai-reasoning li::before { content: '→'; position: absolute; left: 0; color: var(--accent); font-weight: bold;}
+
+        /* Tooltips */
+        .custom-tooltip {
+            background: rgba(15, 23, 42, 0.98); color: #fff; border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px; padding: 16px 20px; font-family: Inter, sans-serif;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); font-size: 16px; min-width: 250px;
+            backdrop-filter: blur(12px);
+        }
+        .custom-tooltip .leaflet-tooltip-left::before { border-left-color: rgba(255,255,255,0.1); }
+        .custom-tooltip .leaflet-tooltip-right::before { border-right-color: rgba(255,255,255,0.1); }
+        .custom-tooltip .leaflet-tooltip-top::before { border-top-color: rgba(255,255,255,0.1); }
+        .custom-tooltip .leaflet-tooltip-bottom::before { border-bottom-color: rgba(255,255,255,0.1); }
+
+        /* SVG animations */
+        @keyframes flowAnimation { to { stroke-dashoffset: -40; } }
+        @keyframes flowAnimationSlow { to { stroke-dashoffset: 40; } }
+        .pipe-flow { stroke-dasharray: 10 15; animation: flowAnimation 1.5s linear infinite; }
+        .pipe-glow { filter: blur(3px); opacity: 0.5; stroke-dasharray: 20 30; animation: flowAnimationSlow 4s linear infinite; }
+        @keyframes pipePulse { 0% { filter: drop-shadow(0 0 3px var(--bad)); stroke-width: 8; opacity: 0.9; } 50% { filter: drop-shadow(0 0 20px var(--bad)); stroke-width: 16; opacity: 1; } 100% { filter: drop-shadow(0 0 3px var(--bad)); stroke-width: 8; opacity: 0.9; } }
+        .pipe-anomaly-anim { animation: pipePulse 1s ease-in-out infinite; stroke-dasharray: 12 8; }
+
+        @keyframes nodeBreathe { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.3); opacity: 1; } }
+        .node-alive { transform-origin: center; animation: nodeBreathe 3s ease-in-out infinite; }
+        
+        @keyframes ripple { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(4); opacity: 0; } }
+        .sensor-ripple { pointer-events: none; border-radius: 50%; position: absolute; animation: ripple 2s infinite ease-out; }
+
+    </style>
+</head>
+<body>
+
+<!-- Xarita orqa fonida -->
+<div id="map-container">
+    <div id="map-scanner"></div>
+    <div id="map"></div>
+</div>
+
+<!-- Foydalanuvchi interfeysi (Ustun qatlam) -->
+<div class="ui-layer">
+
+    <!-- TOP LEFT: Branding & Info -->
+    <div class="top-left">
+        <div class="glass-panel" style="background: var(--glass-bg); backdrop-filter: blur(12px);">
+            <div class="brand">💧 Smart Water AI</div>
+            <div class="subtitle" style="color: #fff; font-weight: 500;">Har bir quvur bo‘yicha shaxsiy tarixiy bosim profili yaratiladi, yangi ko‘rsatkichlar shu standart bilan onlayn solishtiriladi va har qanday og'ish maxsus AI modeli tomonidan fosh etiladi.</div>
+            <a href="/ai-history" style="display:inline-block; margin-top:16px; padding:10px 20px; background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%); color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:14px; text-transform:uppercase; letter-spacing:1px; box-shadow:0 4px 15px rgba(59, 130, 246, 0.4); text-align:center; transition:0.3s; border:1px solid rgba(255,255,255,0.1); width: 100%;">📊 AI Database & History (MVP)</a>
+        </div>
+
+        <div class="glass-panel">
+            <div class="panel-title">Tizim Legendasi</div>
+            <div style="display:flex; flex-direction:column; gap: 14px; margin-top: 18px;">
+                <div style="display:flex; align-items:center; gap: 12px; font-size: 14px; font-weight: 500;">
+                    <div style="width: 25px; height: 4px; background: #10b981; border-radius: 2px;"></div>
+                    <span>Normal Oqim (Harakat)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap: 12px; font-size: 14px; font-weight: 500;">
+                    <div style="width: 25px; height: 4px; background: #ef4444; border-radius: 2px; box-shadow: 0 0 10px #ef4444;"></div>
+                    <span>Favqulodda Quvur Yorilishi</span>
+                </div>
+                <div style="display:flex; align-items:center; gap: 12px; font-size: 14px; font-weight: 500;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #3b82f6; border: 2px solid #fff;"></div>
+                    <span>IoT Datchiklari</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP RIGHT: Stats and AI Panel -->
+    <div class="top-right">
+        
+        <!-- Status -->
+        <div class="glass-panel status-stable" id="topStatusCard">
+            <div class="top-status">
+                <span class="pulse-dot" id="topStatusDot"></span>
+                <span id="topStatusText">Tizim Barqaror Ishlamoqda</span>
+            </div>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 8px;" id="topStatusDesc">Hozirda barcha datchiklar odatiy holatda javob bermoqda. Oqim nominal qoidalarga mos.</div>
+        </div>
+
+        <!-- Infratuzilma -->
+        <div class="glass-panel">
+            <div class="panel-title">Tizim Infratuzilmasi</div>
+            <div class="meta-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Faol Datchiklar</div>
+                    <div class="metric-value" id="sensorCount">-</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Quvurlar</div>
+                    <div class="metric-value" id="pipeCount">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Baza -->
+        <div class="glass-panel">
+            <div class="panel-title">AI Tarixiy Bazasi va Tahlili</div>
+            <div class="meta-grid">
+                <div class="metric-card" style="border-top: 2px solid var(--accent);">
+                    <div class="metric-label" style="color: #60a5fa;">Baza hajmi</div>
+                    <div class="metric-value" style="font-size: 20px;">1.25 ml+ <span style="font-size: 12px; font-weight:500; opacity:0.6;">qator</span></div>
+                </div>
+                <div class="metric-card" style="border-top: 2px solid var(--good);">
+                    <div class="metric-label" style="color: #34d399;">Model holati</div>
+                    <div class="metric-value" style="font-size: 20px;">Tayyor</div>
+                </div>
+            </div>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 14px; text-align: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px;">
+                Oxirgi yangilanish: <b>Hozirgina</b>
+            </div>
+        </div>
+
+        <!-- INCIDENT PANEL (Hidden by Default) -->
+        <div class="glass-panel incident-panel" id="incidentBox">
+            <div class="incident-header">
+                <div class="badge critical" id="incidentSeverity">🔴 KRITIK XAVF</div>
+                <div style="text-align: right;">
+                    <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight:700;">AI Ishonchi</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #fca5a5;" id="incidentConfidenceText">0%</div>
+                </div>
+            </div>
+            
+            <div style="font-size: 20px; font-weight: 800; margin-bottom: 8px; color: #fff;" id="incidentTitle">-</div>
+            <div class="incident-desc" id="incidentSummary">-</div>
+
+            <div class="comparison-box">
+                <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; font-weight: 700; margin-bottom: 14px; letter-spacing: 0.5px;">Tarixiy Norma va Joriy Holat Solishtiruvi</div>
+                <div class="comp-row">
+                    <span class="comp-label">Kutilgan tarixiy profil:</span>
+                    <span class="comp-val-good" id="incidentNormalRange">~ 6.4 - 7.0 bar</span>
+                </div>
+                <div class="comp-row">
+                    <span class="comp-label">Joriy bosim ko'rsatkichi:</span>
+                    <span class="comp-val-bad" id="incidentCurrentPress">4.1 bar</span>
+                </div>
+                
+                <div class="progress-bg">
+                    <div class="progress-fill" id="incidentBarNormal" style="width: 60%;"></div>
+                </div>
+                
+                <div style="display:flex; justify-content:space-between; margin-top: 8px; font-size: 13px;">
+                    <span style="color:var(--muted);">Matematik og'ish:</span>
+                    <b style="color:var(--bad);" id="incidentDeviation">-34%</b>
+                </div>
+            </div>
+
+            <div class="metric-card" style="margin-bottom: 20px; background: rgba(0,0,0,0.4);">
+                <div class="metric-label" style="color: var(--warn);">O'txon Anomaliya Ehtimoli Bo'lgan Quvur</div>
+                <div style="font-size: 18px; font-weight: 700; color: #fff;" id="incidentPipe">-</div>
+            </div>
+
+            <div style="font-size:12px; color:var(--muted); text-transform:uppercase; font-weight:700; margin-bottom: 12px;">Qaror Asoslanishi:</div>
+            <ul class="ai-reasoning" id="incidentReasons"></ul>
+
+        </div>
+
+    </div>
+
+    <!-- BOTTOM CENTER: Timeline and Actions -->
+    <div class="bottom-center">
+        <div class="glass-panel controls-layout">
+            
+            <div class="timeline-container">
+                <div class="panel-title" style="margin-bottom: 24px;">AI Tahlil Jarayoni</div>
+                <div class="timeline" id="simulationTimeline">
+                    <div class="timeline-step active" id="step1">
+                        <div class="timeline-dot">1</div>
+                        <div class="timeline-label">Tarixiy baza va<br>Tarmoq topologiyasi yuklandi</div>
+                    </div>
+                    <div class="timeline-step" id="step2">
+                        <div class="timeline-dot">2</div>
+                        <div class="timeline-label">Datchik ma'lumotlari<br>profil bilan solishtirildi</div>
+                    </div>
+                    <div class="timeline-step" id="step3">
+                        <div class="timeline-dot">3</div>
+                        <div class="timeline-label">AI Anomaliyani<br>Fosh Qildi va Aniqladi</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="width: 1px; background: rgba(255,255,255,0.1); height: 120px; margin: 0 16px;"></div>
+
+            <div class="actions">
+                <select id="scenarioSelect">
+                    <option value="random_leak">Tasodifiy Sizib Chiqish (Simulyatsiya)</option>
+                </select>
+                <button class="primary" id="simulateBtn">Simulyatsiyaga Start Berish</button>
+                <button id="resetBtn">Tarmoqni Tozalash / Qayta Boshlash</button>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // ────────────────────────────────────────────────────────────────
+    // Layers & Global State
+    // ────────────────────────────────────────────────────────────────
+    let map = null;
+    let pipeLayers = [];
+    let nodeLayers = [];
+    let sensorLayers = [];
+    let leakLayer = null;
+    let isSimulating = false;
+
+    // Google Maps Gibrid (Sun'iy yo'ldosh + Yozuvlar bitta qatlamda tez yuklanishi uchun)
+    const TILE_URL = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=ru';
+
+    function initMap(lat, lng, zoom) {
+        if (map) return;
+        
+        map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([lat, lng], zoom);
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        L.tileLayer(TILE_URL, {
+            maxZoom: 21,
+            maxNativeZoom: 19,
+            attribution: 'Map data &copy; <a href="https://www.google.com/maps">Google</a>'
+        }).addTo(map);
+
+        requestAnimationFrame(() => map.invalidateSize());
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Styling
+    // ────────────────────────────────────────────────────────────────
+    function getPipeStyle(status) {
+        if (status === 'anomaly') return { color: '#ef4444', weight: 8, opacity: 1, className: 'pipe-anomaly-anim' };
+        return { color: '#10b981', weight: 4, opacity: 0.8, className: 'pipe-flow' };
+    }
+
+    function getGlowStyle(status) {
+        if (status === 'anomaly') return { color: '#ef4444', weight: 15, opacity: 0, className: 'none' };
+        return { color: '#10b981', weight: 12, opacity: 0.25, className: 'pipe-glow' };
+    }
+
+    function sensorStatusColor(status) {
+        if (status === 'critical') return '#ef4444';
+        if (status === 'warning') return '#f59e0b';
+        return '#3b82f6';
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Timeline Management
+    // ────────────────────────────────────────────────────────────────
+    function setTimelineStep(stepNum) {
+        [1, 2, 3].forEach(n => {
+            const el = document.getElementById(`step${n}`);
+            if (n <= stepNum) el.classList.add('active');
+            else el.classList.remove('active');
+        });
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // UI Panel Rendering
+    // ────────────────────────────────────────────────────────────────
+    function renderIncidentPanel(incident) {
+        const box = document.getElementById('incidentBox');
+        const topStatCard = document.getElementById('topStatusCard');
+        const topStatText = document.getElementById('topStatusText');
+        const topStatDesc = document.getElementById('topStatusDesc');
+        const mapEl = document.getElementById('map');
+
+        if (!incident) {
+            box.style.display = 'none';
+            topStatCard.className = 'glass-panel status-stable';
+            topStatText.innerText = "Tizim Barqaror Ishlamoqda";
+            topStatDesc.innerHTML = "Hozirda barcha datchiklar odatiy holatda. Oqim nominal qoidalarga mos.";
+            // mapEl.parentElement.classList.remove('dimmed');
+            return;
+        }
+
+        box.style.display = 'block';
+        // mapEl.parentElement.classList.add('dimmed');
+        topStatCard.className = 'glass-panel status-alert';
+        topStatText.innerText = "🚨 Model Anomaliyani Aniqladi!";
+        
+        // Use random check to ensure we escape any strings
+        const pipeNameSafe = incident.pipe_name || "Noma'lum"; 
+        
+        topStatDesc.innerHTML = `Model ogohlantiradi: <b style="color:#ef4444;">${pipeNameSafe}</b> hududida favqulodda og'ish kuzatildi.`;
+
+        document.getElementById('incidentSeverity').innerText = "🔴 KRITIK XAVF";
+        document.getElementById('incidentTitle').innerText = incident.title || "Bosim keskin pasayishi";
+        document.getElementById('incidentSummary').innerText = incident.summary || "Avtomatik tahlil natijalari...";
+        
+        setTimeout(() => {
+            document.getElementById('incidentConfidenceText').innerText = (incident.confidence || 0) + '%';
+            document.getElementById('incidentBarNormal').style.width = '65%';
+        }, 100);
+
+        let pipeHtml = `<b>${pipeNameSafe}</b> <br><span style="color:var(--muted); font-size:14px;">Quvur ID: ${incident.pipe_id || 'Nomalum'}</span>`;
+        if (incident.road_hint) pipeHtml += `<br><span style="color:#94a3b8; font-size:14px; margin-top:8px; display:inline-block;">Joylashuv belgisi: ${incident.road_hint}</span>`;
+        document.getElementById('incidentPipe').innerHTML = pipeHtml;
+
+        const ul = document.getElementById('incidentReasons');
+        ul.innerHTML = '';
+        (incident.reasons || ["Bosim keskin past"]).forEach(r => {
+            const li = document.createElement('li');
+            li.innerText = r;
+            ul.appendChild(li);
+        });
+    }
+
+    function clearMapLayers() {
+        [...pipeLayers, ...nodeLayers, ...sensorLayers].forEach(l => {
+            if (map && map.hasLayer(l)) map.removeLayer(l);
+        });
+        pipeLayers = []; nodeLayers = []; sensorLayers = [];
+        if (leakLayer && map && map.hasLayer(leakLayer)) map.removeLayer(leakLayer);
+        leakLayer = null;
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Map Rendering (Pipes, Nodes, Sensors)
+    // ────────────────────────────────────────────────────────────────
+    function renderNetworkElements(data, showAnomaly = true) {
+        clearMapLayers();
+
+        (data.pipes || []).forEach(pipe => {
+            const isAnomaly = showAnomaly && pipe.status === 'anomaly';
+            
+            if (!isAnomaly) {
+                const glow = L.polyline(pipe.coordinates, getGlowStyle('normal')).addTo(map);
+                pipeLayers.push(glow);
+            }
+
+            const style = getPipeStyle(isAnomaly ? 'anomaly' : 'normal');
+            const layer = L.polyline(pipe.coordinates, style).addTo(map);
+            
+            const pName = pipe.name || "Noma'lum";
+            const pId = pipe.id || "Noma'lum ID";
+            const roadHint = pipe.road_hint ? `<br><span style="color:#94a3b8; font-size:13px; margin-top:4px; display:inline-block;">📍 Ko'cha: ${pipe.road_hint}</span>` : '';
+
+            let tooltipHTML = '';
+            if (isAnomaly) {
+                tooltipHTML = `<div style="text-align:left;">
+                    <b style="color:#f8fafc; font-size:16px;">🚨 AI Anomaly: ${pName}</b><br>
+                    <span style="color:#94a3b8; font-size:13px;">ID: ${pId}</span>${roadHint}<br>
+                    <div style="height:1px; background:rgba(255,255,255,0.1); margin: 8px 0;"></div>
+                    <div style="display:flex; justify-content:space-between; gap:20px; margin-bottom:4px;"><span style="color:#94a3b8; font-size:13px;">Tarixiy profil:</span> <span style="color:#10b981; font-weight:700;">~6.5 bar</span></div>
+                    <div style="display:flex; justify-content:space-between; gap:20px; margin-bottom:4px;"><span style="color:#94a3b8; font-size:13px;">Joriy sensor:</span> <span style="color:#ef4444; font-weight:700;">4.1 bar</span></div>
+                    <div style="display:flex; justify-content:space-between; gap:20px; margin-bottom:4px;"><span style="color:#94a3b8; font-size:13px;">Matematik farq:</span> <span style="color:#ef4444; font-weight:700;">-36%</span></div>
+                    <div style="display:flex; justify-content:space-between; gap:20px;"><span style="color:#94a3b8; font-size:13px;">AI Model:</span> <span style="color:#3b82f6; font-weight:700;">Yuklanish 92%</span></div>
+                </div>`;
+            } else {
+                tooltipHTML = `<div style="text-align:center;">
+                    <b style="font-size:16px;">${pName}</b>${roadHint}<br>
+                    <div style="height:1px; background:rgba(255,255,255,0.1); margin: 8px 0;"></div>
+                    <span style="color:#10b981; font-size:13px; font-weight: 600;">✓ Tarixiy profil normalari tasdiqlangan</span>
+                </div>`;
+            }
+
+            layer.bindTooltip(tooltipHTML, { className: 'custom-tooltip', sticky: true, opacity: 0.95 });
+            if (isAnomaly) layer.bringToFront();
+            pipeLayers.push(layer);
+        });
+
+        if (showAnomaly && data.incident?.suspected_location) {
+            const pt = data.incident.suspected_location;
+            leakLayer = L.circle([pt.lat, pt.lng], {
+                radius: 160, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, 
+                weight: 1, dashArray: '5, 10', className: 'pipe-glow'
+            }).addTo(map);
+            leakLayer.bindTooltip(`<b>AI Fosh Etdi</b><br><span style="color:#94a3b8;">Xavf hududi</span>`, { className: 'custom-tooltip', sticky: true });
+        }
+
+        // Nodes
+        (data.nodes || []).forEach(n => {
+            const m = L.circleMarker([n.lat, n.lng], { radius: 6, color: '#050b14', weight: 2, fillColor: '#10b981', fillOpacity: 1, className: 'node-alive' }).addTo(map);
+            m.bindTooltip(`<b>Tugun qismi</b><br><span style="color:#94a3b8">ID: ${n.id}</span>`, { className: 'custom-tooltip' });
+            nodeLayers.push(m);
+        });
+
+        // Sensors
+        (data.sensors || []).forEach(sensor => {
+            let status = showAnomaly ? sensor.status : (['critical','warning'].includes(sensor.status) ? sensor.status : 'normal');
+            if (!showAnomaly) status = sensor.status;
+            
+            const color = sensorStatusColor(status);
+            
+            if (status !== 'normal') {
+                const rm = L.circleMarker([sensor.lat, sensor.lng], { radius: 6, color, weight: 1, fillColor: color, fillOpacity: 0.4, className: 'sensor-ripple' }).addTo(map);
+                sensorLayers.push(rm);
+            }
+
+            const m = L.circleMarker([sensor.lat, sensor.lng], { radius: status!=='normal'?10:6, color: '#050b14', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
+            
+            let diff = (sensor.current_pressure - sensor.baseline_pressure).toFixed(1);
+            let sign = diff>0?'+':'';
+            let vCol = diff < -0.5 ? '#ef4444' : (diff < -0.1 ? '#f59e0b' : '#10b981');
+
+            m.bindTooltip(
+                `<div style="font-size:15px; margin-bottom:8px;"><b>IoT Datchik: ${sensor.id}</b></div>` +
+                `<div style="display:flex; justify-content:space-between; gap:30px;"><span style="color:#94a3b8; font-size:13px;">Bazaviy xotira:</span> <span style="font-weight:600; font-size:14px;">${sensor.baseline_pressure} b</span></div>` +
+                `<div style="display:flex; justify-content:space-between; gap:30px;"><span style="color:#94a3b8; font-size:13px;">Server yozuvi:</span> <span style="color:${vCol}; font-weight:700; font-size:14px;">${sensor.current_pressure} b</span></div>` +
+                `<div style="height:1px; background:rgba(255,255,255,0.1); margin: 6px 0;"></div>` +
+                `<div style="text-align:right; color:${vCol}; font-size:13px; font-weight:bold;">${sign}${diff} og'ish</div>`,
+                { className: 'custom-tooltip', direction: 'top' }
+            );
+            m.bringToFront();
+            sensorLayers.push(m);
+        });
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Core Logic (Simulate, Reset, Load)
+    // ────────────────────────────────────────────────────────────────
+    async function loadNetwork() {
+        try {
+            const res = await fetch('/api/network');
+            const data = await res.json();
+            
+            if (!map) initMap(data.city.center.lat, data.city.center.lng, data.city.zoom || 14);
+            
+            setTimelineStep(1);
+            renderNetworkElements(data, true);
+            renderIncidentPanel(data.incident);
+            document.getElementById('sensorCount').innerText = (data.sensors || []).length;
+            document.getElementById('pipeCount').innerText = (data.pipes || []).length;
+            
+        } catch (e) {
+            console.error('Yuklashda xato:', e);
+        }
+    }
+
+    async function simulateLeak() {
+        if (isSimulating) return;
+        isSimulating = true;
+        document.getElementById('simulateBtn').disabled = true;
+        document.getElementById('resetBtn').disabled = true;
+
+        try {
+            document.getElementById('map-scanner').style.display = 'block';
+            setTimelineStep(1);
+            renderIncidentPanel(null);
+
+            const v = document.getElementById('scenarioSelect').value;
+            const res = await fetch('/api/simulate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario_key: v }) });
+            const data = await res.json();
+
+            if (data.ok) {
+                setTimeout(() => {
+                    setTimelineStep(2);
+                    renderNetworkElements(data.network, false);
+                    
+                    setTimeout(() => {
+                        setTimelineStep(3);
+                        renderNetworkElements(data.network, true);
+                        renderIncidentPanel(data.network.incident);
+                        if (data.network.incident?.suspected_location) {
+                            const pt = data.network.incident.suspected_location;
+                            map.flyTo([pt.lat, pt.lng], 16, { animate: true, duration: 1.5 });
+                        }
+                        finalizeSim();
+                    }, 1800);
+                }, 1000);
+            }
+        } catch (e) {
+            console.error(e);
+            finalizeSim();
+        }
+    }
+
+    function finalizeSim() {
+        isSimulating = false;
+        document.getElementById('map-scanner').style.display = 'none';
+        document.getElementById('simulateBtn').disabled = false;
+        document.getElementById('resetBtn').disabled = false;
+    }
+
+    async function resetNetwork() {
+        if (isSimulating) return;
+        document.getElementById('simulateBtn').disabled = true;
+        document.getElementById('resetBtn').disabled = true;
+
+        try {
+            const res = await fetch('/api/reset', { method: 'POST' });
+            const data = await res.json();
+            if (data.ok) {
+                setTimelineStep(1);
+                renderNetworkElements(data.network, true);
+                renderIncidentPanel(data.network.incident);
+                map.flyTo([data.network.city.center.lat, data.network.city.center.lng], data.network.city.zoom || 14, { animate: true, duration: 1.0 });
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            document.getElementById('simulateBtn').disabled = false;
+            document.getElementById('resetBtn').disabled = false;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('simulateBtn').addEventListener('click', simulateLeak);
+        document.getElementById('resetBtn').addEventListener('click', resetNetwork);
+        window.addEventListener('resize', () => { if (map) map.invalidateSize(); });
+        loadNetwork();
+    });
+</script>
+
+</body>
+</html>
